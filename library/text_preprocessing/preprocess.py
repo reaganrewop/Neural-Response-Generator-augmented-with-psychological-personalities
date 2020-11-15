@@ -49,14 +49,15 @@ class Preprocessor:
         input : A single sentence as a string.
         output : A expanded contraction sentence as string
         """
+        # Note: shouldn't do nltk.word_tokenize, as it splits it's as "it" and "'s"
         words = sentence.split(" ")
         if words:
             for word in words:
-                if self.contraction_mapping.get(word):
+                if self.contraction_mapping.get(word.lower()):
                     sentence = sentence.replace(
-                        word, self.contraction_mapping[word]
+                        word, self.contraction_mapping[word.lower()]
                     )
-        return sentence
+        return sentence.strip()
 
     def evaluate_sentence_quality(self, mod_sent) -> str:
         """
@@ -86,7 +87,13 @@ class Preprocessor:
         for p in self.punct:
             if p in sentence:
                 if remove_punct:
-                    sentence = sentence.replace(p, "")
+                    sentence = sentence.replace(" " + p + " ", " ")
+                    sentence = sentence.replace("" + p + " ", " ")
+                    sentence = sentence.replace(" " + p + "", " ")
+                    # shouldn't remove "high-class" kind of tokens
+                    sentence = re.sub(r'['+ p  + ']' + '['+ p  + ']+', '', sentence)
+        # removes full stop
+        sentence = re.sub(r'[.]+', '', sentence)
         return sentence
 
     def remove_number(self, sentence) -> str:
@@ -105,12 +112,16 @@ class Preprocessor:
         input : A single sentence as a string.
         output : A string without stopwords.
         """
-        words = sentence.split(" ")
+        words = nltk.word_tokenize(sentence)
         if words:
             for word in words:
                 if word.lower() in self.stop_words:
-                    sentence = sentence.replace(word, " ")
-        return sentence
+                    sentence = sentence.replace(" " + word.lower() + " ", " ")
+                    if word.lower() == sentence[:len(word.lower())]:
+                        sentence = sentence[len(word.lower()):]
+                    if word.lower() == sentence[-len(word.lower()):]:
+                        sentence = sentence[:-len(word.lower())]
+        return sentence.strip()
 
     def lemmatization(self, sentence) -> str:
         """
@@ -160,16 +171,20 @@ class Preprocessor:
         )
         text = emoji_pattern.sub(r"", text)
         text = self.expand_contractions(text)
-        text = self.unkown_punct(text, remove_punct)
         if mask_numbers:
             text = self.remove_number(text)
+        text = re.sub(self.web_url_regex, "__url__", text)
+        #specific
+        if '__url__' in text:
+            return ''
+        text = text.replace('__url__', '').replace('__NUMBER__', '')
+        text = self.unkown_punct(text, remove_punct)
         text = (
             text.replace("\\n", "")
             .replace("’", "'")
             .replace("\\", "")
             .replace("‘", "'")
         )
-        text = re.sub(self.web_url_regex, "__url__", text)
         # changes: removed "replace(":", ". ")"
         text = (
             text.replace("”", "'")
@@ -212,20 +227,11 @@ class Preprocessor:
             mod_sent = []
             mod_sent_post = []
             mod_sent = self.clean_text(sent, remove_punct, mask_numbers)
-            mod_sent = mod_sent.replace('__url__', '')
             if mod_sent != "":
-                if stop_words:
-                    mod_sent = self.remove_stopwords(mod_sent)
-                if lemma:
-                    mod_sent = self.lemmatization(mod_sent)
-
                 if pos:
                     mod_sent_pos = mod_sent[:]
                     mod_sent_pos = self.get_pos(mod_sent_pos)
                     pos_tagged_sents.append(mod_sent_pos)
-
-                if word_tokenize:
-                    mod_sent = nltk.word_tokenize(mod_sent)
 
                 if sentence_quality:
                     if not pos:
@@ -236,9 +242,20 @@ class Preprocessor:
 
                     if strength == "weak":
                         continue
-                preprocessed_text.append(mod_sent)
+
+                if stop_words:
+                    mod_sent = self.remove_stopwords(mod_sent)
+
+                if lemma:
+                    mod_sent = self.lemmatization(mod_sent)
+
+                if word_tokenize:
+                    mod_sent = nltk.word_tokenize(mod_sent)
+
+                preprocessed_text.append(mod_sent.strip())
 
         self.preprocessed_text = preprocessed_text
+
         if pos:
             self.pos_tagged_sents = pos_tagged_sents
             return preprocessed_text, pos_tagged_sents

@@ -7,7 +7,6 @@ import os
 stop_words_nltk = stopwords.words("english")
 
 stop_words_extra = [
-    "",
     "right",
     "yeah",
     "okay",
